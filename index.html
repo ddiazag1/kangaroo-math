@@ -266,6 +266,9 @@ function quizBox(lv) {
       <span class="src">1 to ${max}</span></div>
     <div class="row" role="group" aria-label="Point level"><span class="label">Points</span>
       ${[['any', 'Any (random)'], ['3', '3 · easier'], ['4', '4 · medium'], ['5', '5 · harder']].map(([v, l]) => `<button class="chip" data-qpts="${v}" aria-pressed="${pts === v}">${l}</button>`).join('')}</div>
+    <div class="row" role="group" aria-label="When to show answers"><span class="label">Answers</span>
+      <button class="chip" data-mode="practice" aria-pressed="${prefs.mode === 'practice'}">After each question</button>
+      <button class="chip" data-mode="test" aria-pressed="${prefs.mode === 'test'}">At the end</button></div>
     <div class="acts"><button class="btn primary" id="qgo">Start ${n}-question quiz</button>${resume}</div>
   </section>`;
 }
@@ -339,6 +342,8 @@ function renderQ() {
       <span class="pts">${q.pts} points</span>
       ${review ? '<span class="label">Review</span>' : `<span class="mono" id="clock" aria-label="Time spent">${fmt(R.elapsed)}</span>`}
     </div>
+    ${review ? '' : `<div class="toprow"><span class="label">Answers</span>
+      <button class="chip" id="showans" aria-pressed="${R.mode === 'practice'}">${R.mode === 'practice' ? 'Shown after each question' : 'Hidden until the end'}</button></div>`}
     <div class="strip" id="strip">${T.q.map((qq, i) => {
       const a = R.ans[i]; let c = 'dot';
       if (a === 'skip') c += ' skip'; else if (a) c += feedbackShown(i) ? (qq.a.includes(a) ? ' ok' : ' no') : ' ans';
@@ -366,7 +371,28 @@ function renderQ() {
     <button class="btn" id="prev" ${qi === 0 ? 'disabled' : ''}>← Previous</button>
     <span class="src">${q.tid ? `From the ${q.ty} paper, question ${q.qn}. ` : ''}Picture cut off? <a href="https://www.matematica.pt/en/docs/kangaroo/enunciados/${q.ty || T.year}/${q.tid || T.id}.pdf#page=${q.p}" target="_blank" rel="noopener">Open the original page ${q.p}</a></span>
     <button class="btn" id="next" ${qi === n - 1 ? 'disabled' : ''}>Next →</button>
-  </div>`;
+  </div>
+  ${T.quiz && !locked ? `<div class="subnav" id="qedit"><button class="btn" id="qswap">↻ Swap for a different question</button>${n > 1 ? '<button class="btn danger" id="qdel">✕ Remove from quiz</button>' : ''}</div>` : ''}`;
+  const sa = app.querySelector('#showans');
+  if (sa) sa.onclick = () => { R.mode = R.mode === 'practice' ? 'test' : 'practice'; prefs.mode = R.mode; save('kg:prefs', prefs); saveProg(); renderQ(); };
+  const sw = app.querySelector('#qswap');
+  if (sw) sw.onclick = () => {
+    // same point value keeps the easy-to-hard order; never repeat a question already in the quiz
+    const have = new Set(R.items.map(it => it.join(':')));
+    const pool = quizPool(T.level, String(q.pts)).filter(it => !have.has(it.join(':')));
+    if (!pool.length) { sw.textContent = 'No other questions left at this level'; sw.disabled = true; return; }
+    R.items[qi] = pool[Math.floor(Math.random() * pool.length)];
+    delete R.ans[qi]; notes[qi] = []; saveNotes(); saveProg();
+    T = quizTest(R); renderQ();
+  };
+  const dl = app.querySelector('#qdel');
+  if (dl) dl.onclick = () => {
+    if (!dl.dataset.arm) { dl.dataset.arm = 1; dl.textContent = 'Tap again to remove'; return; }
+    R.items.splice(qi, 1);
+    const shift = o => { const out = {}; Object.keys(o).forEach(k => { const i = +k; if (i < qi) out[i] = o[k]; else if (i > qi) out[i - 1] = o[k]; }); return out; };
+    R.ans = shift(R.ans); notes = shift(notes); saveNotes(); saveProg();
+    T = quizTest(R); qi = Math.min(qi, T.q.length - 1); renderQ();
+  };
   app.querySelector('#back').onclick = () => { saveProg(); home(); };
   app.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { qi = +b.dataset.go; renderQ(); });
   app.querySelector('#prev').onclick = () => { qi--; renderQ(); };
